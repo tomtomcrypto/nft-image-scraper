@@ -1,0 +1,13 @@
+{
+    "networkName": "telos-mainnet",
+    "dbHost": "localhost",
+    "dbPort": 5455,
+    "dbName": "teloscan",
+    "dbUser": "teloscan",
+    "dbPass": "teloscan",
+    "ipfsGateway": "https://ipfs.io/ipfs",
+    "querySize": 50,
+    "queueConcurrency": 16,
+    "rootDir": "/tmp/nfts/40",
+    "rootUrl": "https://nfts.telos.net/40"
+}
