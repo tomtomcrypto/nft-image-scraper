@@ -64,9 +64,9 @@ export default class Scraper {
         const updateSql = `UPDATE nfts
                            SET scrub_count = scrub_count + 1,
                                scrub_last  = now()
-                           WHERE contract = $2
-                             AND token_id = $3`;
-        const updateValues = [this.cacheUrl, this.nft.contract, this.nft.token_id];
+                           WHERE contract = $1
+                             AND token_id = $2`;
+        const updateValues = [this.nft.contract, this.nft.token_id];
         await this.pool.query(updateSql, updateValues);
     }
 
@@ -101,9 +101,9 @@ export default class Scraper {
 
                 got.stream(this.imageProperty, {
                     timeout: {
-                        lookup: 100,
-                        connect: 500,
-                        secureConnect: 500,
+                        lookup: 1000,
+                        connect: 5000,
+                        secureConnect: 5000,
                         socket: 1000,
                         send: 10000,
                         response: 10000
