@@ -37,8 +37,8 @@ export default class Scraper {
         if (this.nft.metadata.image) {
             imageProperty = this.nft.metadata.image.trim()
         } else {
-            logger.info(`No image found`);
-            return '';
+            logger.error(`No image found for NFT: ${this.nft.contract}:${this.nft.token_id} from metdata: ${JSON.stringify(this.nft.metadata)}`);
+            throw new Error(`No image found!!`)
         }
 
         if (imageProperty.startsWith("ipfs://"))
@@ -74,6 +74,11 @@ export default class Scraper {
         return new Promise((resolve, reject) => {
             try {
                 logger.debug(`Starting resize for ${this.imageProperty}`)
+                if (this.imageProperty.endsWith("mp4")) {
+                    reject(new Error(`Unsupported file type: ${this.imageProperty}`))
+                    return
+                }
+
                 if (!fs.existsSync(this.targetPath))
                     fs.mkdirSync(this.targetPath, {recursive: true});
 
