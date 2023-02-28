@@ -8,5 +8,6 @@ export interface ScraperConfig {
     querySize: number
     queueConcurrency: number
     rootDir: string
+    tempDir: string
     rootUrl: string
 }

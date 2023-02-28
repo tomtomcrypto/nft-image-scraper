@@ -7,25 +7,51 @@ import {createLogger} from "./util/logger.js";
 
 const logger = createLogger('Scraper');
 
+const gateways = [
+    "https://gateway.pinata.cloud/ipfs/"
+]
+
 export default class Scraper {
     private readonly targetPath: string;
     private cacheUrl: string;
+    private imageProperty: string;
 
     constructor(private pool: Pool, private nft: NFT, private config: ScraperConfig) {
         this.targetPath = `${this.config.rootDir}/${this.nft.contract}/${this.nft.token_id}`
         this.cacheUrl = `${config.rootUrl}/${this.nft.contract}/${this.nft.token_id}`
+        this.imageProperty = this.getImageUrl()
     }
 
     async scrapeAndResize() {
         try {
             await this.scrapePromise();
-            await this.updateRow();
+            await this.updateRowSuccess();
         } catch (e: Error | any) {
-            logger.error(`Failure scraping nft: ${this.nft.contract}:${this.nft.token_id}: ${e.message}`)
+            logger.error(`Failure scraping nft: ${this.nft.contract}:${this.nft.token_id} from url: ${this.imageProperty}: ${e.message}`)
+            await this.updateRowFailure();
         }
     }
 
-    private async updateRow() {
+    private getImageUrl(): string {
+        let imageProperty
+        if (this.nft.metadata.image) {
+            imageProperty = this.nft.metadata.image.trim()
+        } else {
+            logger.info(`No image found`);
+            return '';
+        }
+
+        if (imageProperty.startsWith("ipfs://"))
+            imageProperty = imageProperty.replace("ipfs://", `${this.config.ipfsGateway}/`)
+
+        for (const gatewayUrl of gateways)
+            if (imageProperty.startsWith(gatewayUrl))
+                imageProperty = imageProperty.replace(gatewayUrl, `${this.config.ipfsGateway}/`)
+
+        return imageProperty;
+    }
+
+    private async updateRowSuccess() {
         const updateSql = `UPDATE nfts
                            SET image_cache = $1
                            WHERE contract = $2
@@ -34,21 +60,20 @@ export default class Scraper {
         await this.pool.query(updateSql, updateValues);
     }
 
+    private async updateRowFailure() {
+        const updateSql = `UPDATE nfts
+                           SET scrub_count = scrub_count + 1,
+                               scrub_last  = now()
+                           WHERE contract = $2
+                             AND token_id = $3`;
+        const updateValues = [this.cacheUrl, this.nft.contract, this.nft.token_id];
+        await this.pool.query(updateSql, updateValues);
+    }
+
     private scrapePromise() {
         return new Promise((resolve, reject) => {
-            let imageProperty: string = '';
             try {
-                if (this.nft.metadata.image) {
-                    imageProperty = this.nft.metadata.image.trim()
-                } else {
-                    logger.info(`No image found`);
-                    return;
-                }
-
-                if (imageProperty.startsWith("ipfs://"))
-                    imageProperty = imageProperty.replace("ipfs://", `${this.config.ipfsGateway}/`)
-
-                logger.info(`Starting resize for ${imageProperty}`)
+                logger.debug(`Starting resize for ${this.imageProperty}`)
                 if (!fs.existsSync(this.targetPath))
                     fs.mkdirSync(this.targetPath, {recursive: true});
 
@@ -59,50 +84,40 @@ export default class Scraper {
                     sharpStream
                         .clone()
                         .resize({width: 280})
-                        .jpeg()
+                        .webp()
                         .on('error', reject)
-                        .toFile(`${this.targetPath}/280.jpeg`)
+                        .toFile(`${this.targetPath}/280.webp`)
                 )
 
                 promises.push(
                     sharpStream
                         .clone()
                         .resize({width: 1440})
-                        .jpeg()
+                        .webp()
                         .on('error', reject)
-                        .toFile(`${this.targetPath}/1440.jpeg`)
+                        .toFile(`${this.targetPath}/1440.webp`)
                 )
 
 
-                got.stream(imageProperty, {
+                got.stream(this.imageProperty, {
                     timeout: {
-                        //lookup: 100,
-                        //connect: 500,
-                        //secureConnect: 500,
-                        //socket: 1000,
-                        //send: 10000,
+                        lookup: 100,
+                        connect: 500,
+                        secureConnect: 500,
+                        socket: 1000,
+                        send: 10000,
                         response: 10000
                     }
                 })
                     .on('error', reject)
                     .pipe(sharpStream);
 
-                /*
-                for (const p of promises) {
-                    try {
-                        await p;
-                    } catch (e) {
-                        logger.error(`Failed awaiting a promise`, 3);
-                    }
-                }
-                 */
-
                 Promise.all(promises)
                     .catch(reject)
                     .then(resolve);
 
             } catch (e) {
-                logger.error(`Error doing resize for image: ${imageProperty}`, e)
+                logger.error(`Error doing resize for image: ${this.imageProperty}`, e)
             }
         });
     }
