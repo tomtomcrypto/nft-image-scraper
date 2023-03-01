@@ -13,4 +13,4 @@ yarn run build
 PM2_NAME="$NETWORK_NAME-nft-scraper"
 
 echo "Starting $PM2_NAME..."
-pm2 start --only "$PM2_NAME" --update-env
+pm2 start $INSTALL_ROOT/ecosystem.config.cjs --only "$PM2_NAME" --update-env
