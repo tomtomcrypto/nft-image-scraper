@@ -4,6 +4,10 @@ import got from 'got';
 import fs from "fs";
 import {ScraperConfig} from "./types/configs.js";
 import {createLogger} from "./util/logger.js";
+import stream from 'node:stream';
+import {promisify} from 'node:util'
+
+const pipeline = promisify(stream.pipeline);
 
 const logger = createLogger('Scraper');
 
@@ -14,17 +18,19 @@ const gateways = [
 export default class Scraper {
     private readonly targetPath: string;
     private cacheUrl: string;
-    private imageProperty: string;
+    private imageProperty?: string;
+    private tmpFile: string;
 
     constructor(private pool: Pool, private nft: NFT, private config: ScraperConfig) {
         this.targetPath = `${this.config.rootDir}/${this.nft.contract}/${this.nft.token_id}`
         this.cacheUrl = `${config.rootUrl}/${this.nft.contract}/${this.nft.token_id}`
-        this.imageProperty = this.getImageUrl()
+        this.tmpFile = `${config.tempDir}/${this.nft.contract}_${this.nft.token_id}`;
     }
 
     async scrapeAndResize() {
         try {
-            await this.scrapePromise();
+            this.imageProperty = this.getImageUrl()
+            await this.resize();
             await this.updateRowSuccess();
         } catch (e: Error | any) {
             logger.error(`Failure scraping nft: ${this.nft.contract}:${this.nft.token_id} from url: ${this.imageProperty}: ${e.message}`)
@@ -51,6 +57,53 @@ export default class Scraper {
         return imageProperty;
     }
 
+    private async resize() {
+        await this.downloadFile();
+        await this.resizeFile();
+        // TODO: on error, check if dir is empty, delete if it is
+    }
+
+    private async downloadFile() {
+        try {
+            await pipeline(
+                got.stream(this.imageProperty, {
+                    timeout: {
+                        lookup: 1000,
+                        connect: 5000,
+                        secureConnect: 5000,
+                        socket: 1000,
+                        send: 10000,
+                        response: 10000
+                    }
+                }),
+                fs.createWriteStream(this.tmpFile)
+            )
+        } catch (e) {
+            const errorMsg = `Failure downloading file from ${this.imageProperty}`;
+            logger.error(errorMsg)
+            throw new Error(errorMsg)
+        }
+    }
+
+    private async resizeFile() {
+        try {
+            if (!fs.existsSync(this.targetPath))
+                fs.mkdirSync(this.targetPath, {recursive: true});
+
+            await sharp(this.tmpFile).resize({width: 280})
+                .webp()
+                .toFile(`${this.targetPath}/280.webp`)
+
+            await sharp(this.tmpFile).resize({width: 1440})
+                .webp()
+                .toFile(`${this.targetPath}/1440.webp`)
+        } catch (e) {
+            const errorMsg = `Failure resizing file from ${this.tmpFile}`;
+            logger.error(errorMsg)
+            throw new Error(errorMsg)
+        }
+    }
+
     private async updateRowSuccess() {
         const updateSql = `UPDATE nfts
                            SET image_cache = $1
@@ -70,60 +123,4 @@ export default class Scraper {
         await this.pool.query(updateSql, updateValues);
     }
 
-    private scrapePromise() {
-        return new Promise((resolve, reject) => {
-            try {
-                logger.debug(`Starting resize for ${this.imageProperty}`)
-                if (this.imageProperty.endsWith("mp4")) {
-                    reject(new Error(`Unsupported file type: ${this.imageProperty}`))
-                    return
-                }
-
-                if (!fs.existsSync(this.targetPath))
-                    fs.mkdirSync(this.targetPath, {recursive: true});
-
-                const promises = [];
-                const sharpStream = sharp();
-
-                promises.push(
-                    sharpStream
-                        .clone()
-                        .resize({width: 280})
-                        .webp()
-                        .on('error', reject)
-                        .toFile(`${this.targetPath}/280.webp`)
-                )
-
-                promises.push(
-                    sharpStream
-                        .clone()
-                        .resize({width: 1440})
-                        .webp()
-                        .on('error', reject)
-                        .toFile(`${this.targetPath}/1440.webp`)
-                )
-
-
-                got.stream(this.imageProperty, {
-                    timeout: {
-                        lookup: 1000,
-                        connect: 5000,
-                        secureConnect: 5000,
-                        socket: 1000,
-                        send: 10000,
-                        response: 10000
-                    }
-                })
-                    .on('error', reject)
-                    .pipe(sharpStream);
-
-                Promise.all(promises)
-                    .catch(reject)
-                    .then(resolve);
-
-            } catch (e) {
-                logger.error(`Error doing resize for image: ${this.imageProperty}`, e)
-            }
-        });
-    }
 }
