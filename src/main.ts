@@ -29,6 +29,7 @@ const query = `SELECT *
                    WHERE (image_cache = '' OR image_cache IS NULL)
                      AND metadata IS NOT NULL
                      AND metadata::text != '"___INVALID_METADATA___"'::text
+                     AND scrub_count < 100
                    ORDER BY scrub_last ASC NULLS FIRST
                    LIMIT ${config.querySize || 50}`;
 
