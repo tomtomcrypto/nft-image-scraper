@@ -26,7 +26,7 @@ const pool = new Pool({
 
 const query = `SELECT *
                    FROM nfts
-                   WHERE (image_cache = '') IS TRUE
+                   WHERE (image_cache = '' OR image_cache IS NULL)
                      AND metadata IS NOT NULL
                      AND metadata::text != '"___INVALID_METADATA___"'::text
                    ORDER BY scrub_last ASC NULLS FIRST
