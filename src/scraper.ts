@@ -35,6 +35,8 @@ export default class Scraper {
         } catch (e: Error | any) {
             logger.error(`Failure scraping nft: ${this.nft.contract}:${this.nft.token_id} from url: ${this.imageProperty}: ${e.message}`)
             await this.updateRowFailure();
+        } finally {
+            await fs.unlinkSync(this.tmpFile)
         }
     }
 
